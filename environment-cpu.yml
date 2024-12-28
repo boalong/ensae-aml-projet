@@ -1,0 +1,19 @@
+name: environment-cpu
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      - torch==2.2.2 -f https://download.pytorch.org/whl/cpu
+      - torchvision==0.17.2 -f https://download.pytorch.org/whl/cpu
+      - torchaudio==2.2.2 -f https://download.pytorch.org/whl/cpu 
+      - torchtext==0.17.2
+      - jupyter
+      - numpy
+      - pandas
+      - scikit-learn
+      - matplotlib
+      - tqdm
+      - nltk
+      - openpyxl

@@ -9,8 +9,9 @@ dependencies:
       - torchvision==0.17.2 -f https://download.pytorch.org/whl/cpu
       - torchaudio==2.2.2 -f https://download.pytorch.org/whl/cpu 
       - torchtext==0.17.2
+      - transformers
       - jupyter
-      - numpy
+      - numpy==1.26.4
       - pandas
       - scikit-learn
       - matplotlib

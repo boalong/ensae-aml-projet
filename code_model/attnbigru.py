@@ -16,9 +16,6 @@ from tqdm import tqdm
 
 class AttentionWithContext(nn.Module):
     """
-    Follows the work of Yang et al. [https://www.cs.cmu.edu/~diyiy/docs/naacl16.pdf]
-    "Hierarchical Attention Networks for Document Classification"
-    by using a context vector to assist the attention
     # Input shape
         3D tensor with shape: `(samples, steps, features)`.
     # Output shape
@@ -52,7 +49,7 @@ class AttentionWithContext(nn.Module):
         return mask
 
     def forward(self, x, mask=None):
-        uit = self.W(x) # fill the gap # compute uit = W . x  where x represents ht
+        uit = self.W(x) # compute uit = W . x  where x represents ht
         uit = self.tanh(uit)
         ait = self.u(uit)
         a = torch.exp(ait)
@@ -67,7 +64,7 @@ class AttentionWithContext(nn.Module):
         a = a / (torch.sum(a, axis=1, keepdim=True) + eps)
         weighted_input = a * x # computes the attentional vector
         if self.return_coefficients:
-            return [torch.sum(weighted_input, axis=1), a] ### [attentional vector, coefficients] ### use torch.sum to compute s
+            return [torch.sum(weighted_input, axis=1), a] ### [attentional vector, coefficients] ###
         else:
             return torch.sum(weighted_input, axis=1) ### attentional vector only ###
 
@@ -99,7 +96,7 @@ with open(path_to_data + 'word_to_index.json', 'r') as my_file:
     word_to_index = json.load(my_file)
 
 # invert mapping
-index_to_word = {v: k for k, v in word_to_index.items()} ### fill the gap (use a dict comprehension) ###
+index_to_word = {v: k for k, v in word_to_index.items()}
 input_size = my_docs_array_train.shape
 
 
@@ -138,7 +135,7 @@ def get_loader(x, y, batch_size=32):
 class AttentionBiGRU(nn.Module):
     def __init__(self, input_shape, n_units, index_to_word, dropout=0):
         super(AttentionBiGRU, self).__init__()
-        self.embedding = nn.Embedding(len(index_to_word) + 2,# fill the gap # vocab size
+        self.embedding = nn.Embedding(len(index_to_word) + 2, # vocab size
                                       d, # dimensionality of embedding space
                                       padding_idx=0)
         self.dropout = nn.Dropout(drop_rate)
@@ -148,15 +145,15 @@ class AttentionBiGRU(nn.Module):
                           bias=True,
                           batch_first=True,
                           bidirectional=True)
-        self.attention = AttentionWithContext(n_units * 2,   # fill the gap # the input shape for the attention layer
+        self.attention = AttentionWithContext(n_units * 2,   # the input shape for the attention layer
                                               return_coefficients=True)
 
 
     def forward(self, sent_ints):
         sent_wv = self.embedding(sent_ints)
         sent_wv_dr = self.dropout(sent_wv)
-        sent_wa, _ = self.gru(sent_wv_dr) # fill the gap # RNN layer
-        sent_att_vec, word_att_coeffs = self.attention(sent_wa) # fill the gap # attentional vector for the sent
+        sent_wa, _ = self.gru(sent_wv_dr) # RNN layer
+        sent_att_vec, word_att_coeffs = self.attention(sent_wa) # attentional vector for the sent
         sent_att_vec_dr = self.dropout(sent_att_vec)
         return sent_att_vec_dr, word_att_coeffs
 
@@ -187,20 +184,20 @@ class HAN(nn.Module):
         self.encoder = AttentionBiGRU(input_shape, n_units, index_to_word, dropout)
         self.timeDistributed = TimeDistributed(self.encoder, True)
         self.dropout = nn.Dropout(drop_rate)
-        self.gru = nn.GRU(input_size=n_units * 2,# fill the gap # the input shape of GRU layer
+        self.gru = nn.GRU(input_size=n_units * 2, # the input shape of GRU layer
                           hidden_size=n_units,
                           num_layers=1,
                           bias=True,
                           batch_first=True,
                           bidirectional=True)
-        self.attention = AttentionWithContext(n_units * 2, # fill the gap # the input shape of between-sentence attention layer
+        self.attention = AttentionWithContext(n_units * 2, # the input shape of between-sentence attention layer
                                               return_coefficients=True)
-        self.lin_out = nn.Linear(n_units * 2,   # fill the gap # the input size of the last linear layer
+        self.lin_out = nn.Linear(n_units * 2,   # the input size of the last linear layer
                                  1)
         self.preds = nn.Sigmoid()
 
     def forward(self, doc_ints):
-        sent_att_vecs_dr, word_att_coeffs = self.timeDistributed(doc_ints) # fill the gap # get sentence representation
+        sent_att_vecs_dr, word_att_coeffs = self.timeDistributed(doc_ints) # get sentence representation
         doc_sa, _ = self.gru(sent_att_vecs_dr)
         doc_att_vec, sent_att_coeffs = self.attention(doc_sa)
         doc_att_vec_dr = self.dropout(doc_att_vec)

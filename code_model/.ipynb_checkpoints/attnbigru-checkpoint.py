@@ -4,22 +4,18 @@ This code heavily borrows from a lab of the Altegrad course from Pr. Michalis Va
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 import sys
 import json
 import operator
 import numpy as np
 import urllib.request
-
 from tqdm import tqdm
 
 
 
 class AttentionWithContext(nn.Module):
     """
-    Follows the work of Yang et al. [https://www.cs.cmu.edu/~diyiy/docs/naacl16.pdf]
-    "Hierarchical Attention Networks for Document Classification"
-    by using a context vector to assist the attention
     # Input shape
         3D tensor with shape: `(samples, steps, features)`.
     # Output shape
@@ -53,7 +49,7 @@ class AttentionWithContext(nn.Module):
         return mask
 
     def forward(self, x, mask=None):
-        uit = self.W(x) # fill the gap # compute uit = W . x  where x represents ht
+        uit = self.W(x) # compute uit = W . x  where x represents ht
         uit = self.tanh(uit)
         ait = self.u(uit)
         a = torch.exp(ait)
@@ -68,7 +64,7 @@ class AttentionWithContext(nn.Module):
         a = a / (torch.sum(a, axis=1, keepdim=True) + eps)
         weighted_input = a * x # computes the attentional vector
         if self.return_coefficients:
-            return [torch.sum(weighted_input, axis=1), a] ### [attentional vector, coefficients] ### use torch.sum to compute s
+            return [torch.sum(weighted_input, axis=1), a] ### [attentional vector, coefficients] ###
         else:
             return torch.sum(weighted_input, axis=1) ### attentional vector only ###
 
@@ -89,15 +85,6 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using {device} device")
 
 
-
-# import already preprocessed, tokenized and padded data
-
-url = "https://onedrive.live.com/download?cid=AE69638675180117&resid=AE69638675180117%2199289&authkey=AHgxt3xmgG0Fu5A"
-output_file = "data.zip"
-urllib.request.urlretrieve(url, output_file)
-
-!unzip data.zip
-
 my_docs_array_train = np.load(path_to_data + 'docs_train.npy')
 my_docs_array_test = np.load(path_to_data + 'docs_test.npy')
 
@@ -109,13 +96,9 @@ with open(path_to_data + 'word_to_index.json', 'r') as my_file:
     word_to_index = json.load(my_file)
 
 # invert mapping
-index_to_word = {v: k for k, v in word_to_index.items()} ### fill the gap (use a dict comprehension) ###
+index_to_word = {v: k for k, v in word_to_index.items()}
 input_size = my_docs_array_train.shape
 
-
-import numpy
-import torch
-from torch.utils.data import DataLoader, Dataset
 
 
 class Dataset_(Dataset):
@@ -145,6 +128,174 @@ def get_loader(x, y, batch_size=32):
                             drop_last=True,
                             )
     return data_loader
+
+
+
+
+class AttentionBiGRU(nn.Module):
+    def __init__(self, input_shape, n_units, index_to_word, dropout=0):
+        super(AttentionBiGRU, self).__init__()
+        self.embedding = nn.Embedding(len(index_to_word) + 2, # vocab size
+                                      d, # dimensionality of embedding space
+                                      padding_idx=0)
+        self.dropout = nn.Dropout(drop_rate)
+        self.gru = nn.GRU(input_size=d,
+                          hidden_size=n_units,
+                          num_layers=1,
+                          bias=True,
+                          batch_first=True,
+                          bidirectional=True)
+        self.attention = AttentionWithContext(n_units * 2,   # the input shape for the attention layer
+                                              return_coefficients=True)
+
+
+    def forward(self, sent_ints):
+        sent_wv = self.embedding(sent_ints)
+        sent_wv_dr = self.dropout(sent_wv)
+        sent_wa, _ = self.gru(sent_wv_dr) # RNN layer
+        sent_att_vec, word_att_coeffs = self.attention(sent_wa) # attentional vector for the sent
+        sent_att_vec_dr = self.dropout(sent_att_vec)
+        return sent_att_vec_dr, word_att_coeffs
+
+class TimeDistributed(nn.Module):
+    def __init__(self, module, batch_first=False):
+        super(TimeDistributed, self).__init__()
+        self.module = module
+        self.batch_first = batch_first
+
+    def forward(self, x):
+        if len(x.size()) <= 2:
+            return self.module(x)
+        # Squash samples and timesteps into a single axis
+        x_reshape = x.contiguous().view(-1, x.size(-1))  # (samples * timesteps, input_size) (448, 30)
+        sent_att_vec_dr, word_att_coeffs = self.module(x_reshape)
+        # We have to reshape the output
+        if self.batch_first:
+            sent_att_vec_dr = sent_att_vec_dr.contiguous().view(x.size(0), -1, sent_att_vec_dr.size(-1))  # (samples, timesteps, output_size)
+            word_att_coeffs = word_att_coeffs.contiguous().view(x.size(0), -1, word_att_coeffs.size(-1))  # (samples, timesteps, output_size)
+        else:
+            sent_att_vec_dr = sent_att_vec_dr.view(-1, x.size(1), sent_att_vec_dr.size(-1))  # (timesteps, samples, output_size)
+            word_att_coeffs = word_att_coeffs.view(-1, x.size(1), word_att_coeffs.size(-1))  # (timesteps, samples, output_size)
+        return sent_att_vec_dr, word_att_coeffs
+
+class HAN(nn.Module):
+    def __init__(self, input_shape, n_units, index_to_word, dropout=0):
+        super(HAN, self).__init__()
+        self.encoder = AttentionBiGRU(input_shape, n_units, index_to_word, dropout)
+        self.timeDistributed = TimeDistributed(self.encoder, True)
+        self.dropout = nn.Dropout(drop_rate)
+        self.gru = nn.GRU(input_size=n_units * 2,# fill the gap # the input shape of GRU layer
+                          hidden_size=n_units,
+                          num_layers=1,
+                          bias=True,
+                          batch_first=True,
+                          bidirectional=True)
+        self.attention = AttentionWithContext(n_units * 2, # fill the gap # the input shape of between-sentence attention layer
+                                              return_coefficients=True)
+        self.lin_out = nn.Linear(n_units * 2,   # fill the gap # the input size of the last linear layer
+                                 1)
+        self.preds = nn.Sigmoid()
+
+    def forward(self, doc_ints):
+        sent_att_vecs_dr, word_att_coeffs = self.timeDistributed(doc_ints) # fill the gap # get sentence representation
+        doc_sa, _ = self.gru(sent_att_vecs_dr)
+        doc_att_vec, sent_att_coeffs = self.attention(doc_sa)
+        doc_att_vec_dr = self.dropout(doc_att_vec)
+        doc_att_vec_dr = self.lin_out(doc_att_vec_dr)
+        return self.preds(doc_att_vec_dr), word_att_coeffs, sent_att_coeffs
+
+
+
+def evaluate_accuracy(data_loader, verbose=True):
+    model.eval()
+    total_loss = 0.0
+    ncorrect = ntotal = 0
+    with torch.no_grad():
+        for idx, data in enumerate(data_loader):
+            # inference
+            output = model(data["document"].to(device))[0]
+            output = output[:, -1] # only last vector
+            # total number of examples
+            ntotal +=  output.shape[0]
+            # number of correct predictions
+            predictions = torch.round(output)
+            ncorrect += torch.sum(predictions == data["label"].to(device)) #fill me # number of correct prediction - hint: use torch.sum
+        acc = ncorrect.item() / ntotal
+        if verbose:
+          print("validation accuracy: {:3.2f}".format(acc*100))
+        return acc
+
+
+
+from tqdm import tqdm
+
+model = HAN(input_size, n_units, index_to_word).to(device)
+model = model.double()
+lr = 0.001  # learning rate
+criterion = nn.BCELoss() # fill the gap, use Binary cross entropy from torch.nn: https://pytorch.org/docs/stable/nn.html#loss-functions
+optimizer = torch.optim.Adam(model.parameters(), lr=lr) #fill me # use Adam optimizer
+
+def train(x_train=my_docs_array_train,
+          y_train=my_labels_array_train,
+          x_test=my_docs_array_test,
+          y_test=my_labels_array_test,
+          word_dict=index_to_word,
+          batch_size=batch_size):
+
+    train_data = get_loader(x_train, y_train, batch_size)
+    test_data = get_loader(my_docs_array_test, my_labels_array_test, batch_size)
+
+    best_validation_acc = 0.0
+    p = 0 # patience
+
+    for epoch in range(1, nb_epochs + 1):
+        losses = []
+        accuracies = []
+        with tqdm(train_data, unit="batch") as tepoch:
+            for idx, data in enumerate(tepoch):
+                tepoch.set_description(f"Epoch {epoch}")
+                model.train()
+                optimizer.zero_grad()
+                input = data['document'].to(device)
+                label = data['label'].to(device)
+                label = label.double()
+                output = model.forward(input)[0]
+                output = output[:, -1]
+                loss = criterion(output, label) # fill the gap # compute the loss
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5) # prevent exploding gradient
+                optimizer.step()
+
+                losses.append(loss.item())
+                accuracy = torch.sum(torch.round(output) == label).item() / batch_size
+                accuracies.append(accuracy)
+                tepoch.set_postfix(loss=sum(losses)/len(losses), accuracy=100. * sum(accuracies)/len(accuracies))
+
+        # train_acc = evaluate_accuracy(train_data, False)
+        test_acc = evaluate_accuracy(test_data, False)
+        print("===> Epoch {} Complete: Avg. Loss: {:.4f}, Validation Accuracy: {:3.2f}%"
+              .format(epoch, sum(losses)/len(losses), 100.*test_acc))
+        if test_acc >= best_validation_acc:
+            best_validation_acc = test_acc
+            print("Validation accuracy improved, saving model...")
+            torch.save(model.state_dict(), './best_model.pt')
+            p = 0
+            print()
+        else:
+            p += 1
+            if p==my_patience:
+                print("Validation accuracy did not improve for {} epochs, stopping training...".format(my_patience))
+    print("Loading best checkpoint...")
+    model.load_state_dict(torch.load('./best_model.pt'))
+    model.eval()
+    print('done.')
+
+train()
+
+
+
+
+
 
 
 

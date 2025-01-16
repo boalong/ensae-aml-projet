@@ -24,7 +24,7 @@ torch.manual_seed(seed)
 np.random.seed(seed) 
 
 
-def load_data():
+def load_data(batch_size=16, split=1):
     '''
     Return train, val and test torch datasets
     '''
@@ -35,7 +35,7 @@ def load_data():
     train_dir = sorted([f for f in os.listdir("../training_data/test-and-training/training_data/") if f.endswith('xlsx')])
     test_dir = sorted([f for f in os.listdir("../training_data/test-and-training/test_data/") if f.endswith('xlsx')])
     
-    for f in range(len(train_dir[:1])): # on ne s'intéresse que aux fichiers split-combine (le plus général, données de meilleure qualité), au 1er split
+    for f in range(len(train_dir[split-1:split])): # on ne s'intéresse que aux fichiers split-combine (le plus général, données de meilleure qualité), à un unique split
         train = pd.read_excel("../training_data/test-and-training/training_data/" + train_dir[f], index_col=False)[['sentence', 'label']]
         test = pd.read_excel("../training_data/test-and-training/test_data/" + test_dir[f], index_col=False)[['sentence', 'label']]
     
@@ -95,5 +95,8 @@ def load_data():
     labels_test = torch.LongTensor(labels_test)
     dataset_test = TensorDataset(input_ids_test, attention_masks_test, labels_test)
 
+    dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True)
+    dataloader_val = DataLoader(dataset_val, batch_size=batch_size, shuffle=True)
+    dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
 
-    return dataset_train, dataset_val, dataset_test    
+    return dataloader_train, dataloader_val, dataloader_test

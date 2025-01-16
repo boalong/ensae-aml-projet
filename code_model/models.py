@@ -19,29 +19,31 @@ import matplotlib.pyplot as plt
 
 
 ################################################################################################################
-#### Model #####################################################################################################
+#### Base model ################################################################################################
 ################################################################################################################
 
 class AttentionalDecoder(nn.Module):
     def __init__(self, hidden_size, num_classes):
         super(AttentionalDecoder, self).__init__()
-        print(hidden_size, num_classes)
         self.query_proj = nn.Linear(hidden_size, hidden_size)
         self.key_proj = nn.Linear(hidden_size, hidden_size)
         self.value_proj = nn.Linear(hidden_size, hidden_size)        
         self.attention = nn.MultiheadAttention(hidden_size, num_heads=8, batch_first=True)
-        
+        self.dropout = nn.Dropout(0.1)
+        self.layer_norm = nn.LayerNorm(hidden_size)
         self.fc = nn.Linear(hidden_size, num_classes)
-
+        
     def forward(self, encoder_output, attention_mask):
         query = self.query_proj(encoder_output)
         key = self.key_proj(encoder_output)
         value = self.value_proj(encoder_output)
-
         key_padding_mask = ~attention_mask.bool()
         attn_output, attn_output_weights = self.attention(query=query, key=key, value=value, key_padding_mask=key_padding_mask, average_attn_weights=False)
-        # print(attn_output.shape, attn_output_weights.shape) # (N,L,E), (N,L,S)
-        cls_attn_weights = attn_output_weights[:, :, 0, :]
+        # print(attn_output.shape, attn_output_weights.shape) # (N,L,E), (N,num_heads,L,S)
+        cls_attn_weights = attn_output_weights[:, :, 0, :] # [CLS] token
+
+        attn_output = self.dropout(attn_output)
+        attn_output = self.layer_norm(attn_output + encoder_output) # residual connection + layer norm
         cls_output = attn_output[:, 0, :] # [CLS] token
         
         output = self.fc(cls_output)
@@ -50,12 +52,12 @@ class AttentionalDecoder(nn.Module):
 class BERTClassifier(nn.Module):
     def __init__(self, num_classes, dropout_rate=0.1):
         super(BERTClassifier, self).__init__()
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.bert = BertModel.from_pretrained('bert-base-uncased') # essayer avec d'autres
 
         for param in self.bert.parameters(): # freeze BERT encoder
             param.requires_grad = False
         
-        self.decoder = AttentionalDecoder(self.bert.config.hidden_size, num_classes) # 768, 3
+        self.decoder = AttentionalDecoder(self.bert.config.hidden_size, num_classes) # (768, 3)
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, input_ids, attention_mask, **kwargs):
@@ -69,7 +71,27 @@ class BERTClassifier(nn.Module):
         output, cls_attn_weights = self.decoder(encoder_output, attention_mask)
         return output, cls_attn_weights
 
+    def save_decoder_weights(self, path):
+        '''
+        Utility function to save the weights of the decoder only
+        '''
+        state_dict = {
+            'decoder': self.decoder.state_dict()
+        }
+        torch.save(state_dict, path)
+    
+    def load_decoder_weights(self, path):
+        '''
+        Utility function to load the weights of the decoder only
+        '''
+        state_dict = torch.load(path)
+        self.decoder.load_state_dict(state_dict['decoder'])
 
+
+
+################################################################################################################
+#### Hard thresholding model ###################################################################################
+################################################################################################################
 
 class HardThresholdingMultiheadAttention(nn.Module):
     def __init__(self, hidden_size, num_heads, dropout=0.0, batch_first=True):
@@ -201,5 +223,21 @@ class HardThresholdingBERTClassifier(nn.Module):
         
         output, cls_attn_weights = self.decoder(encoder_output, attention_mask)
         return output, cls_attn_weights
+
+
+
+################################################################################################################
+#### LoRA fine-tuning on BERT ##################################################################################
+################################################################################################################
+
+
+
+
+
+
+
+
+
+
 
         

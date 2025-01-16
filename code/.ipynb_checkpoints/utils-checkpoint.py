@@ -3,9 +3,6 @@ import os
 import torch
 from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
-from torchtext.data import get_tokenizer
-from torchtext.vocab import build_vocab_from_iterator
-from torch.nn.utils.rnn import pad_sequence
 
 from transformers import BertModel, BertTokenizerFast
 from transformers.modeling_outputs import SequenceClassifierOutput
@@ -13,7 +10,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
+from sklearn.metrics import f1_score
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -32,12 +29,12 @@ def load_data(batch_size=16, split=1):
     #### Retrieve data #############################################################################################
     ################################################################################################################
     
-    train_dir = sorted([f for f in os.listdir("../training_data/test-and-training/training_data/") if f.endswith('xlsx')])
-    test_dir = sorted([f for f in os.listdir("../training_data/test-and-training/test_data/") if f.endswith('xlsx')])
+    train_dir = sorted([f for f in os.listdir("../data/training_data/") if f.endswith('xlsx')])
+    test_dir = sorted([f for f in os.listdir("../data/test_data/") if f.endswith('xlsx')])
     
     for f in range(len(train_dir[split-1:split])): # on ne s'intéresse que aux fichiers split-combine (le plus général, données de meilleure qualité), à un unique split
-        train = pd.read_excel("../training_data/test-and-training/training_data/" + train_dir[f], index_col=False)[['sentence', 'label']]
-        test = pd.read_excel("../training_data/test-and-training/test_data/" + test_dir[f], index_col=False)[['sentence', 'label']]
+        train = pd.read_excel("../data/training_data/" + train_dir[f], index_col=False)[['sentence', 'label']]
+        test = pd.read_excel("../data/test_data/" + test_dir[f], index_col=False)[['sentence', 'label']]
     
     sentences = train['sentence'].tolist()
     labels = train['label'].to_numpy()

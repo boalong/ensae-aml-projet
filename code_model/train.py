@@ -1,0 +1,1 @@
+# Mettre une fonction qui prend en paramètre un modèle et une fonction de perte pour entraîner le modèle

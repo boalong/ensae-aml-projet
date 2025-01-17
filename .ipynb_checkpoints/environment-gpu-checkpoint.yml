@@ -1,0 +1,18 @@
+name: environment-gpu
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      - torch
+      - torchvision
+      - torchaudio 
+      - transformers
+      - jupyter
+      - numpy
+      - pandas
+      - scikit-learn
+      - matplotlib
+      - tqdm
+      - openpyxl

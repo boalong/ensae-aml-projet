@@ -108,7 +108,7 @@ def plot_test_sentence(idx, tokenizer, input_ids_test, true, preds, cls_attn_wei
     heads = []
     for i, experiment in enumerate(experiment_names):
         heads.extend( [f'Head {j}, {experiment}' for j in range(1, 9)] )
-        cls_weightss.append( cls_attn_weightss[i][0, :, :sentence_length].T )
+        cls_weightss.append( cls_attn_weightss[i][idx, :, :sentence_length].T )
     cls_weights = np.concatenate(cls_weightss, axis=1)
     
     fig, ax = plt.subplots(figsize=(200, 15))

@@ -116,7 +116,7 @@ def train(device, dataloader_train, dataloader_val, model, learning_rate, num_ep
         if np.mean(current_losses_valid) < best_loss_valid:
             best_loss_valid = np.mean(current_losses_valid)
             print("Validation loss improved, saving model...")
-            torch.save(model.state_dict(), f'{experiment_name}/best_model.pt')
+            model.save_decoder_weights(f'{experiment_name}/best_model.pt')
             p = 0
             print()
         else:
@@ -125,3 +125,48 @@ def train(device, dataloader_train, dataloader_val, model, learning_rate, num_ep
                 break
     
     file.close()
+
+
+
+# Example usage for pretraining
+def pretrain_bert_lora(texts, batch_size=8, epochs=3, device='cuda'):
+    pretrainer = BERTPretrainer()
+    pretrainer.model.to(device)
+    optimizer = torch.optim.AdamW(pretrainer.model.parameters(), lr=1e-4)
+    
+    for epoch in range(epochs):
+        total_loss = 0
+        num_batches = 0
+        
+        # Create batches
+        for i in range(0, len(texts), batch_size):
+            batch_texts = texts[i:i + batch_size]
+            loss = pretrainer.train_step(optimizer, batch_texts, device)
+            total_loss += loss
+            num_batches += 1
+        
+        avg_loss = total_loss / num_batches
+        print(f"Epoch {epoch+1}, Average MLM Loss: {avg_loss:.4f}")
+    
+    # Save LoRA weights
+    pretrainer.model.save_pretrained("lora_pretrained")
+    return "lora_pretrained"
+
+# Training the classifier with pretrained LoRA weights
+def train_classifier(train_data, labels, pretrained_lora_path, batch_size=8, epochs=3, device='cuda'):
+    model = LoRABERTClassifier(num_classes=8, pretrained_lora_path=pretrained_lora_path)
+    print([name for name, param in model.named_parameters() if param.requires_grad]) # check that the BERT parameters are well frozen
+    model.to(device)
+    
+    optimizer = torch.optim.AdamW([
+        {'params': model.decoder.parameters(), 'lr': 1e-4}  # Higher learning rate for decoder
+    ])
+    
+    criterion = nn.CrossEntropyLoss()
+    
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        
+        # Training loop implementation here
+        # ...

@@ -5,16 +5,15 @@ dependencies:
   - python=3.9
   - pip
   - pip:
-      - torch==2.2.2 -f https://download.pytorch.org/whl/cpu
-      - torchvision==0.17.2 -f https://download.pytorch.org/whl/cpu
-      - torchaudio==2.2.2 -f https://download.pytorch.org/whl/cpu 
-      - torchtext==0.17.2
+      - torch -f https://download.pytorch.org/whl/cpu
+      - torchvision -f https://download.pytorch.org/whl/cpu
+      - torchaudio -f https://download.pytorch.org/whl/cpu 
       - transformers
+      - peft
       - jupyter
       - numpy==1.26.4
       - pandas
       - scikit-learn
       - matplotlib
       - tqdm
-      - nltk
       - openpyxl

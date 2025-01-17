@@ -14,9 +14,9 @@ Main notebook in which I ran the experiments and plotted the results.
 Python file containing the implementations of the models.
 
 ### `train_and_test.py`
-Python file containing the training loops and inference loops.
+Python file containing the training and inference loops.
 
 ## `data/`
 Folder containing the train and test data, taken from [Shah et al.'s repository](https://github.com/gtfintechlab/fomc-hawkish-dovish)
 
-The weights of all the models and the training infos were saved in dedicated folders for each configuration.
+The weights of all the models and the training infos were saved in dedicated folders for each experiment.

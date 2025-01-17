@@ -115,7 +115,7 @@ def train(device, dataloader_train, dataloader_val, model, optimizer, num_epochs
         if np.mean(current_losses_valid) < best_loss_valid:
             best_loss_valid = np.mean(current_losses_valid)
             print("Validation loss improved, saving model...")
-            model.save_decoder_weights(f'{experiment_name}/best_model.pt')
+            model.save_weights(f'{experiment_name}/best_model.pt')
             p = 0
             print()
         else:

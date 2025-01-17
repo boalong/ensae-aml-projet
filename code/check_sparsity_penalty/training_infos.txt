@@ -1,1 +1,1 @@
-Epoch [1/1], Train Loss: 1.4295, Valid Loss: 1.4988, Valid Sparsity penalty: 0.4295, Valid Accuracy: 0.3750, Valid F1 score: 0.3214
+Epoch [1/1], Train Loss: 1.5582, Valid Loss: 1.5544, Valid Sparsity penalty: 0.4084, Valid Accuracy: 0.3750, Valid F1 score: 0.2843

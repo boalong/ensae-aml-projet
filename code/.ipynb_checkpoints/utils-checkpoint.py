@@ -91,4 +91,4 @@ def load_data(batch_size=16, split=1):
     dataloader_val = DataLoader(dataset_val, batch_size=batch_size, shuffle=True)
     dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
 
-    return dataloader_train, dataloader_val, dataloader_test
+    return (dataloader_train, dataloader_val, dataloader_test), (tokenizer, input_ids_test)

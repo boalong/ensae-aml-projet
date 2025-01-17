@@ -92,3 +92,45 @@ def load_data(batch_size=16, split=1):
     dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
 
     return (dataloader_train, dataloader_val, dataloader_test), (tokenizer, input_ids_test)
+
+
+def plot_test_sentence(idx, tokenizer, input_ids_test, true, preds, cls_attn_weightss, experiment_names, lora=False):
+    '''
+    Plot for the sentence at position idx in the test set the attention weights of the decoder with respect to the [CLS] token, for all the heads and experiments
+    '''
+    print(tokenizer.decode(input_ids_test[idx], skip_special_tokens=True))
+    print()
+    sentence = [tok for tok in tokenizer.convert_ids_to_tokens(input_ids_test[idx]) if tok != '[PAD]']
+    sentence_length = len(sentence)
+    
+    cls_weightss = []
+    heads = []
+    for i, experiment in enumerate(experiment_names):
+        heads.extend( [f'Head {j}, {experiment}' for j in range(1, 9)] )
+        cls_weightss.append( cls_attn_weightss[i][0, :, :sentence_length].T )
+    cls_weights = np.concatenate(cls_weightss, axis=1)
+    
+    fig, ax = plt.subplots(figsize=(200, 15))
+    im = ax.imshow(cls_weights, cmap="YlGn", vmin=0, vmax=1)
+    
+    # Create colorbar
+    cbar = ax.figure.colorbar(im, ax=ax)
+    
+    # Show all ticks and label them with the respective list entries
+    ax.set_xticks(range(len(heads)), labels=heads,
+                  rotation=45, ha="right", rotation_mode="anchor")
+    ax.set_yticks(range(len(sentence)), labels=sentence)
+    
+    edges = np.linspace(0, 1, len(experiment_names) + 1)
+    centers = (edges[:-1] + edges[1:]) / 2
+    for i in range(len(experiment_names)):
+        text = ax.text(centers[i], 1.01, f"Predicted label: {preds[i][idx]}, True label: {true[idx]}", 
+                       transform=ax.transAxes,
+                       ha="center", va="center", color="k")
+
+    fig.tight_layout()
+    if not lora:
+        plt.savefig(f'img/{str(idx).zfill(3)}.png')
+    else:
+        plt.savefig(f'img/{str(idx).zfill(3)}_lora.png')
+    plt.show()

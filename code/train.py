@@ -124,3 +124,29 @@ def train(device, dataloader_train, dataloader_val, model, optimizer, num_epochs
                 break
     
     file.close()
+
+
+def evaluate_on_test(model):
+    '''
+    Return true labels, predictions, attn weights of the decoder wrt [CLS] token, accuracy and f1 score
+    '''
+    model.eval()
+    
+    true = []
+    pred = []
+    all_cls_attn_weights = []
+    for input_ids, attention_masks, labels in tqdm(dataloader_test):
+        input_ids = input_ids.to(device)
+        attention_masks = attention_masks.to(device)
+        with torch.no_grad():
+            outputs, cls_attn_weights = model(input_ids=input_ids, attention_mask=attention_masks)
+            true.append(labels.numpy())
+            pred.append(outputs.argmax(dim=1).numpy())
+            all_cls_attn_weights.append(cls_attn_weights.numpy())
+    true = np.concatenate(true, axis=0)
+    pred = np.concatenate(pred, axis=0)
+    cls_attn_weights = np.concatenate(all_cls_attn_weights, axis=0)
+    acc_test = np.mean(true == pred)
+    f1_test = f1_score(true, pred, average='weighted')
+
+    return true, pred, cls_attn_weights, acc_test, f1_test

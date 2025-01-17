@@ -1,0 +1,13 @@
+Epoch [1/20], Train Loss: 1.0260, Valid Loss: 0.9590, Valid Accuracy: 0.5278, Valid F1 score: 0.4754
+Epoch [2/20], Train Loss: 0.9190, Valid Loss: 0.9406, Valid Accuracy: 0.5379, Valid F1 score: 0.4778
+Epoch [3/20], Train Loss: 0.8671, Valid Loss: 0.9321, Valid Accuracy: 0.5581, Valid F1 score: 0.4979
+Epoch [4/20], Train Loss: 0.7995, Valid Loss: 0.8653, Valid Accuracy: 0.5934, Valid F1 score: 0.5692
+Epoch [5/20], Train Loss: 0.7686, Valid Loss: 0.8477, Valid Accuracy: 0.5884, Valid F1 score: 0.5701
+Epoch [6/20], Train Loss: 0.7398, Valid Loss: 0.8347, Valid Accuracy: 0.6364, Valid F1 score: 0.6388
+Epoch [7/20], Train Loss: 0.6925, Valid Loss: 0.8636, Valid Accuracy: 0.6086, Valid F1 score: 0.6130
+Epoch [8/20], Train Loss: 0.6445, Valid Loss: 0.8309, Valid Accuracy: 0.6414, Valid F1 score: 0.6385
+Epoch [9/20], Train Loss: 0.6159, Valid Loss: 0.8317, Valid Accuracy: 0.6338, Valid F1 score: 0.6305
+Epoch [10/20], Train Loss: 0.5839, Valid Loss: 0.9026, Valid Accuracy: 0.6288, Valid F1 score: 0.6134
+Epoch [11/20], Train Loss: 0.5540, Valid Loss: 0.8613, Valid Accuracy: 0.6439, Valid F1 score: 0.6408
+Epoch [12/20], Train Loss: 0.5155, Valid Loss: 0.8972, Valid Accuracy: 0.6338, Valid F1 score: 0.6269
+Epoch [13/20], Train Loss: 0.4958, Valid Loss: 0.9311, Valid Accuracy: 0.6338, Valid F1 score: 0.6341

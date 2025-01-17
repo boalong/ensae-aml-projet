@@ -61,7 +61,7 @@ def train(device, dataloader_train, dataloader_val, model, optimizer, num_epochs
         preds = []
         with torch.no_grad():
             for input_ids, attention_masks, labels in tqdm(dataloader_val):
-                trues.append(labels.numpy())
+                trues.append(labels.cpu().numpy())
                 torch.cuda.empty_cache()
                 
                 input_ids = input_ids.to(device)
@@ -82,7 +82,7 @@ def train(device, dataloader_train, dataloader_val, model, optimizer, num_epochs
                     sparsity_penalties_valid.append(sparsity_penalty.item())
         
                 pred = outputs.argmax(dim=1)
-                preds.append(pred.numpy())
+                preds.append(pred.cpu().numpy())
 
         trues = np.concatenate(trues)
         preds = np.concatenate(preds)                
@@ -136,9 +136,9 @@ def evaluate_on_test(device, dataloader_test, model):
         attention_masks = attention_masks.to(device)
         with torch.no_grad():
             outputs, cls_attn_weights = model(input_ids=input_ids, attention_mask=attention_masks)
-            true.append(labels.numpy())
-            pred.append(outputs.argmax(dim=1).numpy())
-            all_cls_attn_weights.append(cls_attn_weights.numpy())
+            true.append(labels.cpu().numpy())
+            pred.append(outputs.argmax(dim=1).cpu().numpy())
+            all_cls_attn_weights.append(cls_attn_weights.cpu().numpy())
     true = np.concatenate(true, axis=0)
     pred = np.concatenate(pred, axis=0)
     cls_attn_weights = np.concatenate(all_cls_attn_weights, axis=0)

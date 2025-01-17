@@ -1,1 +1,0 @@
-Epoch [1/1], Train Loss: 1.1715, Valid Loss: 1.1983, Valid Accuracy: 0.2500, Valid F1 score: 0.2018

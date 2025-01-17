@@ -4,18 +4,14 @@ import torch
 from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
 
-from transformers import BertModel, BertTokenizerFast
-from transformers.modeling_outputs import SequenceClassifierOutput
-
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 
-def train(device, dataloader_train, dataloader_val, model, learning_rate, num_epochs, patience, experiment_name, add_sparsity_penalty=False, alpha=10):
+def train(device, dataloader_train, dataloader_val, model, optimizer, num_epochs, patience, experiment_name, add_sparsity_penalty=False, alpha=10):
     '''
     Takes a model and hyperparameters as input, train the model and save everything in a folder with the name 'experiment_name'
     '''
@@ -23,7 +19,6 @@ def train(device, dataloader_train, dataloader_val, model, learning_rate, num_ep
         os.makedirs(experiment_name)
     file = open(f'{experiment_name}/training_infos.txt', 'w') # open a file to save the infos
     
-    optimizer = torch.optim.Adam(model.decoder.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
     
     losses_train = []
@@ -60,6 +55,8 @@ def train(device, dataloader_train, dataloader_val, model, learning_rate, num_ep
             losses_train.append(loss.item())
             if add_sparsity_penalty:
                 sparsity_penalties_train.append(sparsity_penalty.item())
+
+            break
     
         model.eval()
         trues = []
@@ -88,6 +85,8 @@ def train(device, dataloader_train, dataloader_val, model, learning_rate, num_ep
         
                 pred = outputs.argmax(dim=1)
                 preds.append(pred.numpy())
+
+                break
 
         trues = np.concatenate(trues)
         preds = np.concatenate(preds)                
@@ -125,48 +124,3 @@ def train(device, dataloader_train, dataloader_val, model, learning_rate, num_ep
                 break
     
     file.close()
-
-
-
-# Example usage for pretraining
-def pretrain_bert_lora(texts, batch_size=8, epochs=3, device='cuda'):
-    pretrainer = BERTPretrainer()
-    pretrainer.model.to(device)
-    optimizer = torch.optim.AdamW(pretrainer.model.parameters(), lr=1e-4)
-    
-    for epoch in range(epochs):
-        total_loss = 0
-        num_batches = 0
-        
-        # Create batches
-        for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i + batch_size]
-            loss = pretrainer.train_step(optimizer, batch_texts, device)
-            total_loss += loss
-            num_batches += 1
-        
-        avg_loss = total_loss / num_batches
-        print(f"Epoch {epoch+1}, Average MLM Loss: {avg_loss:.4f}")
-    
-    # Save LoRA weights
-    pretrainer.model.save_pretrained("lora_pretrained")
-    return "lora_pretrained"
-
-# Training the classifier with pretrained LoRA weights
-def train_classifier(train_data, labels, pretrained_lora_path, batch_size=8, epochs=3, device='cuda'):
-    model = LoRABERTClassifier(num_classes=8, pretrained_lora_path=pretrained_lora_path)
-    print([name for name, param in model.named_parameters() if param.requires_grad]) # check that the BERT parameters are well frozen
-    model.to(device)
-    
-    optimizer = torch.optim.AdamW([
-        {'params': model.decoder.parameters(), 'lr': 1e-4}  # Higher learning rate for decoder
-    ])
-    
-    criterion = nn.CrossEntropyLoss()
-    
-    for epoch in range(epochs):
-        model.train()
-        total_loss = 0
-        
-        # Training loop implementation here
-        # ...

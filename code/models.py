@@ -1,19 +1,11 @@
-import os
-
 import torch
 from torch import nn
-from torch.utils.data import TensorDataset, DataLoader
 import torch.nn.functional as F
 
-from transformers import BertModel, BertTokenizer, BertForMaskedLM
-from peft import get_peft_model, LoraConfig, TaskType
+from transformers import BertModel
 
 import math
 import numpy as np
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
 ################################################################################################################
@@ -22,21 +14,15 @@ import matplotlib.pyplot as plt
 
 class AttentionalDecoder(nn.Module):
     def __init__(self, hidden_size, num_classes, dropout=0.1):
-        super(AttentionalDecoder, self).__init__()
-        self.query_proj = nn.Linear(hidden_size, hidden_size)
-        self.key_proj = nn.Linear(hidden_size, hidden_size)
-        self.value_proj = nn.Linear(hidden_size, hidden_size)        
+        super(AttentionalDecoder, self).__init__()     
         self.attention = nn.MultiheadAttention(hidden_size, num_heads=8, batch_first=True)
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(hidden_size)
         self.fc = nn.Linear(hidden_size, num_classes)
         
     def forward(self, encoder_output, attention_mask):
-        query = self.query_proj(encoder_output)
-        key = self.key_proj(encoder_output)
-        value = self.value_proj(encoder_output)
         key_padding_mask = ~attention_mask.bool()
-        attn_output, attn_output_weights = self.attention(query=query, key=key, value=value, key_padding_mask=key_padding_mask, average_attn_weights=False)
+        attn_output, attn_output_weights = self.attention(query=encoder_output, key=encoder_output, value=encoder_output, key_padding_mask=key_padding_mask, average_attn_weights=False)
         # print(attn_output.shape, attn_output_weights.shape) # (N,L,E), (N,num_heads,L,S)
         cls_attn_weights = attn_output_weights[:, :, 0, :] # [CLS] token
 
@@ -58,7 +44,7 @@ class BERTClassifier(nn.Module):
         self.decoder = AttentionalDecoder(self.bert.config.hidden_size, num_classes) # (768, 3)
         self.dropout = nn.Dropout(dropout_rate)
 
-    def forward(self, input_ids, attention_mask, **kwargs):
+    def forward(self, input_ids, attention_mask):
         with torch.no_grad():
             encoder_output = self.bert(
                 input_ids, 
@@ -97,11 +83,11 @@ class HardThresholdingMultiheadAttention(nn.Module):
         self.threshold = threshold
         self.hidden_size = hidden_size
         self.num_heads = num_heads
+        self.dropout = nn.Dropout(dropout)
 
         self.query_proj = nn.Linear(hidden_size, hidden_size)
         self.key_proj = nn.Linear(hidden_size, hidden_size)
         self.value_proj = nn.Linear(hidden_size, hidden_size)
-        self.dropout = nn.Dropout(dropout)
 
     def forward(self, query, key, value, key_padding_mask, average_attn_weights=False):
         batch_size, sequence_length, embedding_size = query.size()
@@ -114,13 +100,13 @@ class HardThresholdingMultiheadAttention(nn.Module):
         key = key.view(batch_size, sequence_length, self.num_heads, -1).transpose(1, 2)
         value = value.view(batch_size, sequence_length, self.num_heads, -1).transpose(1, 2)
 
-        attention_scores = torch.matmul(query, key.transpose(-1, -2)) / math.sqrt(embedding_size // self.num_heads)
+        attention_scores = torch.matmul(query, key.transpose(-1, -2)) / math.sqrt(embedding_size // self.num_heads) # [16, 8, 245, 245] (batch_size, num_heads, L, S)
         attention_scores = attention_scores.masked_fill(
-            key_padding_mask.unsqueeze(1).unsqueeze(1).to(torch.bool), # vérfier que pas de pb ici
+            key_padding_mask.unsqueeze(1).unsqueeze(1), # (batch_size, 1, 1, S) # ok
             float("-inf"),
-        )
-        attention_weights = F.softmax(attention_scores, dim=-1)
-        print(attention_weigths.shape)
+        ) # (batch_size, num_heads, L, S)
+        attention_weights = F.softmax(attention_scores, dim=-1) # (batch_size, num_heads, L, S) ok, on somme sur S la source
+        print(attention_weights.sum())
 
         #### Hard thresholding #########################################################################################
         attention_weights = attention_weights.masked_fill(
@@ -128,6 +114,7 @@ class HardThresholdingMultiheadAttention(nn.Module):
             0.
         )
         attention_weights = F.normalize(attention_weights, p=1, dim=-1) # renormaliser pour que ça somme à 1
+        # print(attention_weights.sum())
         ################################################################################################################
 
         attention_weights = self.dropout(attention_weights) # peut-être que je devrais supprimer le dropout pour avoir des résultats plus stables        
@@ -141,21 +128,15 @@ class HardThresholdingMultiheadAttention(nn.Module):
 
 class HardThresholdingAttentionalDecoder(nn.Module):
     def __init__(self, threshold, hidden_size, num_classes, dropout=0.1):
-        super(HardThresholdingAttentionalDecoder, self).__init__()
-        self.query_proj = nn.Linear(hidden_size, hidden_size)
-        self.key_proj = nn.Linear(hidden_size, hidden_size)
-        self.value_proj = nn.Linear(hidden_size, hidden_size)        
-        self.attention = nn.HardThresholdingMultiheadAttention(threshold=threshold, hidden_size=hidden_size, num_heads=8)
+        super(HardThresholdingAttentionalDecoder, self).__init__()   
+        self.attention = HardThresholdingMultiheadAttention(threshold=threshold, hidden_size=hidden_size, num_heads=8)
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(hidden_size)
         self.fc = nn.Linear(hidden_size, num_classes)
 
     def forward(self, encoder_output, attention_mask):
-        query = self.query_proj(encoder_output)
-        key = self.key_proj(encoder_output)
-        value = self.value_proj(encoder_output)
         key_padding_mask = ~attention_mask.bool()
-        attn_output, attn_output_weights = self.attention(query=query, key=key, value=value, key_padding_mask=key_padding_mask, average_attn_weights=False)
+        attn_output, attn_output_weights = self.attention(query=encoder_output, key=encoder_output, value=encoder_output, key_padding_mask=key_padding_mask, average_attn_weights=False)
         # print(attn_output.shape, attn_output_weights.shape) # (N,L,E), (N,num_heads,L,S)
         cls_attn_weights = attn_output_weights[:, :, 0, :] # [CLS] token
 
@@ -167,17 +148,17 @@ class HardThresholdingAttentionalDecoder(nn.Module):
         return output, cls_attn_weights
 
 class HardThresholdingBERTClassifier(nn.Module):
-    def __init__(self, num_classes, dropout_rate=0.1):
-        super(BERTClassifier, self).__init__()
+    def __init__(self, num_classes, threshold, dropout_rate=0.1):
+        super(HardThresholdingBERTClassifier, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
 
         for param in self.bert.parameters(): # freeze BERT encoder
             param.requires_grad = False
         
-        self.decoder = HardThresholdingAttentionalDecoder(self.bert.config.hidden_size, num_classes) # 768, 3
+        self.decoder = HardThresholdingAttentionalDecoder(threshold, self.bert.config.hidden_size, num_classes) # 768, 3
         self.dropout = nn.Dropout(dropout_rate)
 
-    def forward(self, input_ids, attention_mask, **kwargs):
+    def forward(self, input_ids, attention_mask):
         with torch.no_grad():
             encoder_output = self.bert(
                 input_ids, 
@@ -203,126 +184,196 @@ class HardThresholdingBERTClassifier(nn.Module):
         '''
         state_dict = torch.load(path)
         self.decoder.load_state_dict(state_dict['decoder'])
+
+
+
+################################################################################################################
+#### Temperature in the Softmax ################################################################################
+################################################################################################################
+
+class TemperatureMultiheadAttention(nn.Module):
+    def __init__(self, temperature, hidden_size, num_heads, dropout=0.1): # batch_first=True
+        super(TemperatureMultiheadAttention, self).__init__()
+        self.temperature = temperature
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.dropout = nn.Dropout(dropout)
+
+        self.query_proj = nn.Linear(hidden_size, hidden_size)
+        self.key_proj = nn.Linear(hidden_size, hidden_size)
+        self.value_proj = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, query, key, value, key_padding_mask, average_attn_weights=False):
+        batch_size, sequence_length, embedding_size = query.size()
+
+        query = self.query_proj(query)
+        key = self.key_proj(key)
+        value = self.value_proj(value)
+
+        query = query.view(batch_size, sequence_length, self.num_heads, -1).transpose(1, 2)
+        key = key.view(batch_size, sequence_length, self.num_heads, -1).transpose(1, 2)
+        value = value.view(batch_size, sequence_length, self.num_heads, -1).transpose(1, 2)
+
+        attention_scores = torch.matmul(query, key.transpose(-1, -2)) / math.sqrt(embedding_size // self.num_heads) # [16, 8, 245, 245] (batch_size, num_heads, L, S)
+        attention_scores = attention_scores.masked_fill(
+            key_padding_mask.unsqueeze(1).unsqueeze(1), # (batch_size, 1, 1, S) # ok
+            float("-inf"),
+        ) # (batch_size, num_heads, L, S)
+
+        #### Temperature ###############################################################################################
+        attention_weights = F.softmax(attention_scores / self.temperature, dim=-1) # (batch_size, num_heads, L, S) ok, on somme sur S la source
+        ################################################################################################################
+
+        attention_weights = self.dropout(attention_weights) # peut-être que je devrais supprimer le dropout pour avoir des résultats plus stables        
+        attention_output = torch.matmul(attention_weights, value)
+        attention_output = attention_output.transpose(1, 2).contiguous().view(batch_size, sequence_length, embedding_size)
+
+        if average_attn_weights:
+            attention_weights = attention_weights.mean(dim=1)
+
+        return attention_output, attention_weights
+
+class TemperatureAttentionalDecoder(nn.Module):
+    def __init__(self, temperature, hidden_size, num_classes, dropout=0.1):
+        super(TemperatureAttentionalDecoder, self).__init__()   
+        self.attention = TemperatureMultiheadAttention(temperature=temperature, hidden_size=hidden_size, num_heads=8)
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(hidden_size)
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, encoder_output, attention_mask):
+        key_padding_mask = ~attention_mask.bool()
+        attn_output, attn_output_weights = self.attention(query=encoder_output, key=encoder_output, value=encoder_output, key_padding_mask=key_padding_mask, average_attn_weights=False)
+        # print(attn_output.shape, attn_output_weights.shape) # (N,L,E), (N,num_heads,L,S)
+        cls_attn_weights = attn_output_weights[:, :, 0, :] # [CLS] token
+
+        attn_output = self.dropout(attn_output)
+        attn_output = self.layer_norm(attn_output + encoder_output) # residual connection + layer norm
+        cls_output = attn_output[:, 0, :] # [CLS] token
+        
+        output = self.fc(cls_output)
+        return output, cls_attn_weights
+
+class TemperatureBERTClassifier(nn.Module):
+    def __init__(self, num_classes, temperature, dropout_rate=0.1):
+        super(TemperatureBERTClassifier, self).__init__()
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+
+        for param in self.bert.parameters(): # freeze BERT encoder
+            param.requires_grad = False
+        
+        self.decoder = TemperatureAttentionalDecoder(temperature, self.bert.config.hidden_size, num_classes) # 768, 3
+        self.dropout = nn.Dropout(dropout_rate)
+
+    def forward(self, input_ids, attention_mask):
+        with torch.no_grad():
+            encoder_output = self.bert(
+                input_ids, 
+                attention_mask=attention_mask
+            ).last_hidden_state
+        encoder_output = self.dropout(encoder_output)
+        
+        output, cls_attn_weights = self.decoder(encoder_output, attention_mask)
+        return output, cls_attn_weights
+        
+    def save_decoder_weights(self, path):
+        '''
+        Utility function to save the weights of the decoder only
+        '''
+        state_dict = {
+            'decoder': self.decoder.state_dict()
+        }
+        torch.save(state_dict, path)
+    
+    def load_decoder_weights(self, path):
+        '''
+        Utility function to load the weights of the decoder only
+        '''
+        state_dict = torch.load(path)
+        self.decoder.load_state_dict(state_dict['decoder'])
+        
 
 
 ################################################################################################################
 #### LoRA fine-tuning on BERT ##################################################################################
 ################################################################################################################
 
-class BERTPretrainer:
-    def __init__(self, lora_rank=8, lora_alpha=32, lora_dropout=0.1):
-        self.model = BertForMaskedLM.from_pretrained('bert-base-uncased')
-        peft_config = LoraConfig(
-            task_type=TaskType.MASKED_LM,
-            inference_mode=False,
-            r=lora_rank,
-            lora_alpha=lora_alpha,
-            lora_dropout=lora_dropout,
-            target_modules=["query", "key", "value"]
-        )
-        self.model = get_peft_model(self.model, peft_config)
+class LoRA(nn.Module):
+    def __init__(self, in_features, out_features, r=8, lora_alpha=32, lora_dropout=0.1):
+        super(LoRA, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.r = r
+        self.lora_alpha = lora_alpha
+        self.lora_dropout = lora_dropout
         
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    
-    def prepare_mlm_input(self, text_batch, mlm_probability=0.15):
-        # Tokenize input
-        inputs = self.tokenizer(text_batch, padding=True, truncation=True, 
-                              max_length=512, return_tensors="pt")
-        
-        # Create MLM inputs
-        labels = inputs.input_ids.clone()
-        probability_matrix = torch.full(labels.shape, mlm_probability)
-        special_tokens_mask = [
-            self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True)
-            for val in labels.tolist()
-        ]
-        probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
-        masked_indices = torch.bernoulli(probability_matrix).bool()
-        labels[~masked_indices] = -100  # We only compute loss on masked tokens
-        
-        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
-        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
-        inputs.input_ids[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
-        
-        return inputs, labels
-    
-    def train_step(self, optimizer, text_batch, device):
-        self.model.train()
-        inputs, labels = self.prepare_mlm_input(text_batch)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-        labels = labels.to(device)
-        
-        outputs = self.model(input_ids=inputs.input_ids,
-                           attention_mask=inputs.attention_mask,
-                           labels=labels)
-        
-        loss = outputs.loss
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-        
-        return loss.item()
+        self.lora_A = nn.Parameter(torch.randn(in_features, r))
+        self.lora_B = nn.Parameter(torch.randn(out_features, r))
+        self.dropout = nn.Dropout(lora_dropout)
+
+    def forward(self, x):
+        A = self.lora_A
+        B = self.lora_B
+        output = x + self.dropout(torch.matmul(x, A) @ B.T / self.lora_alpha)
+        return output
 
 class LoRABERTClassifier(nn.Module):
-    def __init__(self, num_classes, pretrained_lora_path, dropout_rate=0.1):
+    def __init__(self, num_classes, dropout_rate=0.1):
         super(LoRABERTClassifier, self).__init__()
         self.bert = BertModel.from_pretrained('bert-base-uncased')
-        peft_config = LoraConfig.from_pretrained(pretrained_lora_path)
-        self.bert = get_peft_model(self.bert, peft_config)
-        self.bert.load_adapter(pretrained_lora_path)
-
         for param in self.bert.parameters(): # freeze BERT encoder
             param.requires_grad = False
+            
+        modules_to_replace = []
+        for name, module in self.bert.named_modules():
+            if isinstance(module, nn.Linear) and ('query' in name or 'key' in name or 'value' in name):
+                modules_to_replace.append((name, module))
+        
+        for name, module in modules_to_replace:
+            in_features = module.in_features
+            out_features = module.out_features
+            lora_module = LoRA(in_features, out_features, r=8, lora_alpha=32, lora_dropout=0.1)
+            setattr(self.bert, name, nn.Sequential(module, lora_module))
         
         self.decoder = AttentionalDecoder(self.bert.config.hidden_size, num_classes)
         self.dropout = nn.Dropout(dropout_rate)
-    
+
     def forward(self, input_ids, attention_mask, **kwargs):
-        with torch.no_grad():
-            encoder_output = self.bert(
-                input_ids, 
-                attention_mask=attention_mask
-            ).last_hidden_state
-        encoder_output = self.dropout(encoder_output)
+        encoder_output = self.bert(
+            input_ids, 
+            attention_mask=attention_mask
+        ).last_hidden_state
         
-        output, cls_attn_weights = self.decoder(encoder_output, attention_mask)
-        return output, cls_attn_weights
+        encoder_output = self.dropout(encoder_output)
+        output = self.decoder(encoder_output, attention_mask)
+        return output
 
     def save_decoder_weights(self, path):
         '''
-        Utility function to save the weights of the decoder only
+        Utility function to save the weights of the lora layers and the decoder
         '''
-        state_dict = {
-            'decoder': self.decoder.state_dict()
+        lora_decoder_weights = {
+            'lora': {name: param for name, param in self.named_parameters() if 'lora' in name},
+            'decoder': {name: param for name, param in self.named_parameters() if 'decoder' in name}
         }
-        torch.save(state_dict, path)
+        torch.save(lora_decoder_weights, path)
     
     def load_decoder_weights(self, path):
         '''
-        Utility function to load the weights of the decoder only
+        Utility function to load the weights of the lora layers and the decoder
         '''
-        state_dict = torch.load(path)
-        self.decoder.load_state_dict(state_dict['decoder'])
+        lora_decoder_weights = torch.load(path)
+        lora_state_dict = {k: v for k, v in lora_decoder_weights['lora'].items() if 'lora' in k}
+        decoder_state_dict = {k: v for k, v in lora_decoder_weights['decoder'].items() if 'decoder' in k}
 
+        # Load LoRA weights
+        lora_params = {name: param for name, param in self.named_parameters() if 'lora' in name}
+        lora_params.update(lora_state_dict)
+        for name, param in lora_params.items():
+            self.state_dict()[name].copy_(param)
 
-
-# Example workflow
-"""
-# First, pretrain with LoRA
-texts = ["your", "domain", "specific", "texts"]  # Your unlabeled dataset
-lora_path = pretrain_bert_lora(texts)
-
-# Then train the classifier
-train_data = ["your", "labeled", "texts"]  # Your labeled dataset
-labels = [0, 1, 2]  # Your labels
-train_classifier(train_data, labels, lora_path)
-"""
-
-
-
-
-
-
-
-
-        
+        # Load decoder weights
+        decoder_params = {name: param for name, param in self.named_parameters() if 'decoder' in name}
+        decoder_params.update(decoder_state_dict)
+        for name, param in decoder_params.items():
+            self.state_dict()[name].copy_(param)        

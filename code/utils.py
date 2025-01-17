@@ -4,16 +4,11 @@ import torch
 from torch import nn
 from torch.utils.data import TensorDataset, DataLoader
 
-from transformers import BertModel, BertTokenizerFast
-from transformers.modeling_outputs import SequenceClassifierOutput
+from transformers import BertTokenizerFast
 
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-
 
 # assign seed to numpy and PyTorch
 seed=2025

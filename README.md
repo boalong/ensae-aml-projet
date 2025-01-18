@@ -1,3 +1,5 @@
+NB: I realized there was an indexing mistake in the function that generates visualizations. I kept the previous 'main.ipynb' as it was but added a 'main_corrected.ipynb' with the bug fixed and a 'img_corrected' with the corrected plots.
+
 # Interpretable text classification with sparse attention
 
 This is the project of Adrien Letellier for the course Advanced ML of ENSAE.
